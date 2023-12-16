@@ -3,6 +3,9 @@ import requests
 import pandas as pd
 from elasticsearch import Elasticsearch
 from elasticsearch import helpers
+from typing import Annotated
+from fastapi import File, UploadFile
+from PyPDF2 import PdfReader
 
 
 app = FastAPI()
@@ -13,6 +16,26 @@ data = pd.read_csv('data.csv')
 @app.get("/")
 def main():
     return {"Hello World":"TJ-MATCHING API"}
+
+
+
+def elastic_retrievel(query):
+    resp = es_client.search(
+        index="index-tj-matching", 
+        body = {
+            "_source": ["process_id","process_file"],
+            "from" : 0,
+            "size" : 10,
+            "query": {
+                "multi_match":{
+                "type": "most_fields",
+                "query":  query, 
+                "fields": ["clean_text_petition"] 
+                }
+            }
+        }
+    )
+    return resp
 
 
 def index_payload():
@@ -43,7 +66,7 @@ def index_payload():
         }     
 
 
-@app.post("/index_deploy/")
+@app.get("/index_deploy")
 def index_deploy():
 
     # drop the index if it exists
@@ -60,22 +83,35 @@ def index_deploy():
 @app.get("/search/{query}")
 def index_search(query:str):
 
-    resp = es_client.search(
-        index="index-tj-matching", 
-        body = {
-            "_source": ["process_id","process_file"],
-            "from" : 0,
-            "size" : 10,
-            "query": {
-                "multi_match":{
-                "type": "most_fields",
-                "query":  query, 
-                "fields": ["clean_text_petition"] 
-                }
-            }
-        }
-    )
+    resp = elastic_retrievel(query)
     return resp
+
+
+def extract_pdf(file):
+    reader = PdfReader(file.file)
+    raw_text_pdf = ''
+    for page in reader.pages:
+      
+      raw_text_pdf += '\n'
+      
+      raw_text_pdf += page.extract_text()
+
+    return raw_text_pdf
+
+
+
+
+
+@app.post("/uploadfile/")
+async def create_upload_file(file: UploadFile):
+    
+    raw_text_pdf = extract_pdf(file)
+
+    resp = elastic_retrievel(raw_text_pdf)
+
+
+    return resp
+    
     
 
 
